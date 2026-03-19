@@ -17,6 +17,9 @@ import spacy
 import spacy_transformers
 from bs4 import BeautifulSoup
 import csv
+import urllib.parse
+from rdflib import Graph, URIRef, Literal, Namespace
+from rdflib.namespace import RDF, RDFS
 
 
 urls_arcane = ["https://wiki.leagueoflegends.com/en-us/Universe:Arcane_(TV_Series)/Season_1/Episode_1",
@@ -273,3 +276,56 @@ def save_entities_store_to_csv(entities_store, filename="extracted_knowledge.csv
                 ";".join(sorted(data["types"])),
                 ";".join(sorted(data["urls"]))
             ])
+
+
+# ================================
+# RDF Graph Construction
+# ================================
+
+# Private namespace for part 1
+ARCANE = Namespace("https://aureleee.github.io/kg/arcane/")
+
+def clean_uri_string(s):
+    """Cleans a string to be safely used as a URI component."""
+    cleaned = s.replace(" ", "_").replace("'", "").replace('"', '')
+    return urllib.parse.quote(cleaned)
+
+def build_rdf_graph(entities_store, relations_store):
+    """
+    Converts extracted entities and relations into an RDF graph using URIs.
+    """
+    g = Graph()
+    g.bind("arcane", ARCANE) # Bind prefix for cleaner outputs
+    
+    # Entity & types processing 
+    for entity_str, data in entities_store.items():
+        entity_uri = ARCANE[clean_uri_string(entity_str)]
+        g.add((entity_uri, RDFS.label, Literal(entity_str)))
+        
+        for ent_type in data["types"]:
+            type_uri = ARCANE[clean_uri_string(ent_type)]
+            # Declare the type as a Class
+            g.add((type_uri, RDF.type, RDFS.Class))
+            # Assign the entity to this class
+            g.add((entity_uri, RDF.type, type_uri))
+            
+    # Relation processing (Triplets)
+    for (head, relation, tail), data in relations_store.items():
+        head_uri = ARCANE[clean_uri_string(head)]
+        tail_uri = ARCANE[clean_uri_string(tail)]
+        
+        # Normalize predicate naming (camelCase/lowercase)
+        normalized_relation = relation.lower().replace(" ", "")
+        rel_uri = ARCANE[clean_uri_string(normalized_relation)]
+        
+        # relation as an RDF Property
+        g.add((rel_uri, RDF.type, RDF.Property))
+        
+        # actual data triplet
+        g.add((head_uri, rel_uri, tail_uri))
+        
+    return g
+
+def save_rdf_graph(g, filepath, format="turtle"):
+    """Saves the RDF graph to a file (default format is Turtle)."""
+    g.serialize(destination=str(filepath), format=format)
