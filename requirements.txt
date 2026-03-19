@@ -1,0 +1,4 @@
+trafilatura
+spacy-transformers
+bs4
+ipykernel
