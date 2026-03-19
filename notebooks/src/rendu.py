@@ -14,6 +14,7 @@ import trafilatura
 import json
 import os
 import spacy
+import spacy_transformers
 from bs4 import BeautifulSoup
 import csv
 
@@ -59,8 +60,10 @@ def extract_plot(url):
 
 
 
-def save_to_json(data, filepath="data.jsonl"):
-    with open(filepath, "a", encoding="utf-8") as f:
+def save_to_json(data, dir, file="data.jsonl"):
+    if not dir.exists():
+        dir.mkdir(parents = True, exist_ok = True)
+    with open(file, "a", encoding="utf-8") as f:
         f.write(json.dumps(data, ensure_ascii=False) + "\n")
 
 
@@ -80,7 +83,7 @@ def load_existing_urls(output_file):
 
 
 
-def extract_all_pages(urls, min_words=500, output_file="data.jsonl"):
+def extract_all_pages(urls, dir, min_words=500, output_file="data.jsonl"):
     saved = 0
     skipped = 0
     existing_urls = load_existing_urls(output_file)
@@ -100,7 +103,7 @@ def extract_all_pages(urls, min_words=500, output_file="data.jsonl"):
             skipped += 1
             continue
 
-        save_to_json(result, output_file)
+        save_to_json(result, dir, output_file)
         existing_urls.add(url)
 
         print(f"  → Saved ({result['word_count']} words)")
