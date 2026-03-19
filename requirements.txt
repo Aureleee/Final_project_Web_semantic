@@ -2,3 +2,5 @@ trafilatura
 spacy-transformers
 bs4
 ipykernel
+owlready2
+rdflib
