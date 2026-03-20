@@ -18,9 +18,10 @@ import spacy_transformers
 from bs4 import BeautifulSoup
 import csv
 import urllib.parse
+import pandas as pd
 from rdflib import Graph, URIRef, Literal, Namespace
-from rdflib.namespace import RDF, RDFS
-
+from rdflib.namespace import RDF, RDFS, OWL
+from SPARQLWrapper import SPARQLWrapper, JSON
 
 urls_arcane = ["https://wiki.leagueoflegends.com/en-us/Universe:Arcane_(TV_Series)/Season_1/Episode_1",
                 "https://wiki.leagueoflegends.com/en-us/Universe:Arcane_(TV_Series)/Season_1/Episode_2",
@@ -282,8 +283,8 @@ def save_entities_store_to_csv(entities_store, filename="extracted_knowledge.csv
 # RDF Graph Construction
 # ================================
 
-# Private namespace for part 1
-ARCANE = Namespace("https://aureleee.github.io/kg/arcane/")
+# private namespace
+ARCANE = Namespace("http://example.org/arcane/")
 
 def clean_uri_string(s):
     """Cleans a string to be safely used as a URI component."""
@@ -297,7 +298,7 @@ def build_rdf_graph(entities_store, relations_store):
     g = Graph()
     g.bind("arcane", ARCANE) # Bind prefix for cleaner outputs
     
-    # Entity & types processing 
+    # 1. Entity & type processing (Nodes)
     for entity_str, data in entities_store.items():
         entity_uri = ARCANE[clean_uri_string(entity_str)]
         g.add((entity_uri, RDFS.label, Literal(entity_str)))
