@@ -7,3 +7,4 @@ rdflib
 pandas
 requests
 SPARQLWrapper
+fastcoref

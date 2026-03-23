@@ -6,4 +6,4 @@ python -m venv venv_WDmS
 # This ensures it CANNOT install to the global/user folder
 ./venv_WDmS/Scripts/python.exe -m pip install --upgrade pip
 ./venv_WDmS/Scripts/python.exe -m pip install -r requirements.txt
-./venv_WDmS/Scripts/python.exe -m spacy download en_core_web_trf
+./venv_WDmS/Scripts/python.exe -m spacy download en_core_web_sm
