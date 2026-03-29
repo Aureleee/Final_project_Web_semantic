@@ -134,8 +134,8 @@ def extract_page_data(url, arcane_engine, base_domain="https://wiki.leagueoflege
     doc = arcane_engine.process_text(text)
 
     # 3. Extract entities and relations from the resolved doc
-    entities = extract_entities_from_doc(doc)
-    relations = extract_relations_from_doc(doc)
+    entities = extract_entities(doc)
+    relations = extract_relations(doc)
     
     # Return exactly as your loop expects: (Dictionary, Entities, Relations)
     return ({
