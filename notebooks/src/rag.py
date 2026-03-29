@@ -3,20 +3,20 @@ import rdflib
 
 def get_schema_summary(g):
     """
-    Summarizes the classes and predicates in the graph so the LLM 
-    knows which 'words' it is allowed to use in its SPARQL query.
+    Shows the LLM exactly which Predicates exist and gives 
+    examples of Entity names so it knows the casing (e.g., Vander vs vander).
     """
-    classes = sorted(list(set(str(o).split('/')[-1] for s, p, o in g.triples((None, rdflib.RDF.type, None)))))
-    predicates = sorted(list(set(str(p).split('/')[-1] for s, p, o in g)))
+    predicates = sorted(list(set(str(p).split('/')[-1] for p in g.predicates() if "arcane" in str(p))))
     
-    summary = f"Classes: {', '.join(classes)}\n"
-    summary += f"Predicates: {', '.join(predicates)}"
+    subjects = sorted(list(set(str(s).split('/')[-1] for s in g.subjects() if "arcane" in str(s))))[:15]
+    
+    summary = "RDF SCHEMA CONTEXT:\n"
+    summary += f"- Available Predicates: {', '.join(predicates)}\n"
+    summary += f"- Example Entities: {', '.join(subjects)}\n"
+    summary += "- Prefix: arcane: <http://example.org/arcane/>"
     return summary
 
-def ask_local_llm(prompt, model="gemma2:2b"):
-    """
-    Sends a prompt to your local Ollama server.
-    """
+def ask_local_llm(prompt, model="deepseek-coder-v2:16b"):
     url = "http://localhost:11434/api/generate"
     payload = {
         "model": model,
@@ -24,47 +24,55 @@ def ask_local_llm(prompt, model="gemma2:2b"):
         "stream": False
     }
     try:
-        response = requests.post(url, json=payload)
+        response = requests.post(url, json=payload, timeout=60)
         return response.json().get("response", "")
     except Exception as e:
         return f"Error connecting to Ollama: {e}"
 
 def generate_sparql(question, schema_summary):
     """
-    Asks the LLM to write a SPARQL query based on the user's question.
+    Expert prompt: Forces the LLM to stick to the schema and 
+    handles markdown cleaning more robustly.
     """
     prompt = f"""
-    You are a SPARQL expert. Use the following RDF schema to answer the user's question.
-    Schema:
+    You are a SPARQL expert for an Arcane (TV Series) Knowledge Graph.
+    
     {schema_summary}
-    
-    Prefix: arcane: <http://example.org/arcane/>
-    
-    User Question: {question}
-    
-    Return ONLY the SPARQL query. Do not include markdown formatting or explanations.
+
+    TASK:
+    Write a SPARQL query to answer: "{question}"
+
+    CONSTRAINTS:
+    1. Use ONLY the predicates listed in the schema context.
+    2. Use the 'arcane:' prefix for all entities and predicates.
+    3. Use 'SELECT ?ans WHERE {{ ... }}' format unless otherwise specified.
+    4. Return ONLY the SPARQL code. No explanation. No backticks.
     """
-    return ask_local_llm(prompt).strip().replace("```sparql", "").replace("```", "")
+    
+    raw_response = ask_local_llm(prompt).strip()
+    
+    # Clean output: remove markdown code blocks and the word 'sparql'
+    clean_query = raw_response.replace("```sparql", "").replace("```", "").replace("sparql", "").strip()
+    return clean_query
 
 def run_query_with_repair(g, question, schema_summary, max_attempts=3):
-    """
-    Tries to execute the SPARQL query. If it fails (syntax error), 
-    it asks the LLM to fix it.
-    """
     current_query = generate_sparql(question, schema_summary)
     
     for attempt in range(max_attempts):
         try:
-            print(f"Attempt {attempt+1}: Executing SPARQL...")
+            print(f"--- Attempt {attempt+1} ---")
             results = g.query(current_query)
             return results, current_query
         except Exception as e:
-            print(f"Query failed. Asking LLM to repair...")
+            print(f"Query failed (Syntax or Logic Error): {e}")
             repair_prompt = f"""
-            The following SPARQL query failed with error: {e}
+            The SPARQL query below failed or returned an error. 
+            Error: {e}
             Query: {current_query}
-            Fix the query and return ONLY the corrected SPARQL.
+            Schema: {schema_summary}
+            
+            Fix the query. Ensure predicates match the schema. Return ONLY the corrected SPARQL.
             """
-            current_query = ask_local_llm(repair_prompt).strip().replace("```sparql", "").replace("```", "")
+            current_query = ask_local_llm(repair_prompt).strip().replace("```sparql", "").replace("```", "").replace("sparql", "").strip()
             
     return None, current_query
