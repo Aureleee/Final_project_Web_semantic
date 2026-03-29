@@ -1,6 +1,7 @@
 from src.nlp import ARCANE
 import urllib
 from rdflib import Graph, Literal, RDF, RDFS, URIRef
+
 def clean_uri_string(s):
     """Cleans a string to be safely used as a URI component."""
     cleaned = s.replace(" ", "_").replace("'", "").replace('"', '')
@@ -27,7 +28,10 @@ def build_rdf_graph(entities_store, relations_store):
         g.add((type_uri, RDF.type, RDFS.Class))
         g.add((entity_uri, RDF.type, type_uri))
             
-    for (head, relation, tail), data in relations_store.items():
+    for relation in relations_store:
+        head = relation["head"]
+        tail = relation["tail"]
+        relation = relation["relation"]
         # Ensure the head and tail match the cleaned URIs used in Step 1
         head_uri = ARCANE[clean_uri_string(head)]
         tail_uri = ARCANE[clean_uri_string(tail)]

@@ -19,6 +19,7 @@ import csv
 import urllib.parse
 from rdflib import Namespace
 from fastcoref import spacy_component
+from spacy.tokens import Doc
 
 urls_arcane = ["https://wiki.leagueoflegends.com/en-us/Universe:Arcane_(TV_Series)/Season_1/Episode_1",
                 "https://wiki.leagueoflegends.com/en-us/Universe:Arcane_(TV_Series)/Season_1/Episode_2",
@@ -35,37 +36,64 @@ urls_arcane = ["https://wiki.leagueoflegends.com/en-us/Universe:Arcane_(TV_Serie
 # NLP model 
 # ================================
 
+
 class ArcaneNLP:
-    """
-    A high-potency NLP engine tailored for the complex narratives of Arcane.
-    Uses LingMess (SpanBERT + Cross-Encoder) for state-of-the-art coref.
-    """
     def __init__(self, use_gpu=True):
-        print("🔮 Initializing ArcaneNLP (High-Potency Mode)...")
-        
+        print("🔮 Initializing ArcaneNLP (Safe Merging Mode)...")
+        # Load the base model
         try:
             self.nlp = spacy.load("en_core_web_trf")
         except OSError:
-            print("Downloading transformer model...")
             os.system("python -m spacy download en_core_web_trf")
             self.nlp = spacy.load("en_core_web_trf")
 
         device = 'cuda' if use_gpu else 'cpu'
+        
         self.nlp.add_pipe(
             "fastcoref",
-            config = {
-                    'model_architecture': 'LingMessCoref', 
-                    'model_path': 'biu-nlp/lingmess-coref', 
-                    'device': device,
-                    "max_dist": 50,   
-                    "max_doc_len": 30000 #trained on gpu so no problem here 
-            } 
+            config={
+                'model_architecture': 'LingMessCoref',
+                'model_path': 'biu-nlp/lingmess-coref',
+                'device': device
+            }
         )
+
     def process_text(self, text):
         """
-        Resolves coreferences and then processes the text through spaCy.
+        Processes text in chunks and merges the resulting Doc objects 
+        to bypass the Transformer's 4096-token limit.
         """
-        return self.nlp(text, component_cfg={"fastcoref": {'resolve_text': True}})
+        words = text.split()
+        chunk_size = 500 
+        chunks = [" ".join(words[i:i + chunk_size]) for i in range(0, len(words), chunk_size)]
+        
+        processed_chunks = []
+        
+        for chunk in chunks:
+            try:
+                # 1. Run Coreference on the small chunk
+                doc = self.nlp(chunk, component_cfg={"fastcoref": {'resolve_text': True}})
+                
+                # 2. Get the resolved text (pronouns replaced)
+                resolved_chunk_text = doc._.resolved_text if doc._.resolved_text else chunk
+                
+                # 3. Process the resolved text to get Entities/Relations for THIS chunk.
+                # We disable 'fastcoref' here because we already resolved it.
+                doc_chunk = self.nlp(resolved_chunk_text, disable=["fastcoref"])
+                processed_chunks.append(doc_chunk)
+                
+            except Exception as e:
+                print(f"  ⚠️ Chunk processing failed: {e}")
+                # Fallback: create a simple doc if inference fails
+                processed_chunks.append(self.nlp.make_doc(chunk))
+
+        # 4. THE CRITICAL FIX: Merge the Docs without re-running inference
+        # This creates one large Doc containing all entities and heads from the chunks.
+        if processed_chunks:
+            full_doc = Doc.from_docs(processed_chunks)
+            return full_doc
+        
+        return self.nlp.make_doc(text)
 
 # ================================
 # URL loading / page extraction
@@ -129,20 +157,13 @@ def extract_page_data(url, arcane_engine, base_domain="https://wiki.leagueoflege
                         full_link = urllib.parse.urljoin(base_domain, href)
                         relevant_links.add(full_link)
 
-    # 1. Join all paragraphs together into one big string
     text = "\n".join(plot_paragraphs)
-    
     if len(text.split()) < 50: 
         return None
-
-    # 2. Pass the ENTIRE text to the potent engine at once (No loops needed!)
     doc = arcane_engine.process_text(text)
-
-    # 3. Extract entities and relations from the resolved doc
     entities = extract_entities(doc)
     relations = extract_relations(doc)
     
-    # Return exactly as your loop expects: (Dictionary, Entities, Relations)
     return ({
         "url": url,
         "text": doc.text, # IMPORTANT: Save the resolved text, not the raw text!
@@ -175,17 +196,22 @@ def extract_all_pages(start_urls, dir, arcane_engine, max_pages=50, output_file=
             skipped += 1
             continue
 
-        page_data, raw_entities, page_relations = extract_page_data(url, arcane_engine)
-        
+        result = extract_page_data(url, arcane_engine)
+
+        if result is None:
+            print(f"  → Skipped {url} (No relevant text or fetch error)")
+            skipped += 1
+            continue
+
+        # Now that we know it's NOT None, we can safely unpack it
+        page_data, raw_entities, page_relations = result
+                
         if page_data is None:
             print("  → Skipped (No relevant text)")
             skipped += 1
             continue
-        
-        # 3. ACCUMULATE RELATIONS
         global_relations.extend(page_relations)
 
-        # 4. ACCUMULATE ENTITY VOTES (Keep a running tally across all pages)
         for ent_text, ent_type in raw_entities:
             if ent_text not in global_entity_votes:
                 global_entity_votes[ent_text] = Counter()
@@ -194,7 +220,6 @@ def extract_all_pages(start_urls, dir, arcane_engine, max_pages=50, output_file=
             global_entity_votes[ent_text][ent_type] += 1
             global_entity_urls[ent_text].add(url)
 
-        # Save raw JSON and queue logic
         save_to_json(page_data, dir, output_file)
         existing_urls.add(url)
         
