@@ -43,28 +43,22 @@ def prepare_kge_datasets(graph_path, output_dir):
             tail = str(o).split("/")[-1]
             
             triplets.append([head, rel, tail])
-
-    # Convert to a Pandas DataFrame
     df = pd.DataFrame(triplets, columns=["head", "relation", "tail"])
     
-    # Drop duplicates just in case the extraction created any
     df = df.drop_duplicates()
     total_triplets = len(df)
     
     print(f"Extracted {total_triplets} pure fact triplets.")
 
     # --- SPLITTING THE DATA (80% Train / 10% Valid / 10% Test) ---
-    # 1. Split off 20% for Temp (Valid + Test)
     train_df, temp_df = train_test_split(df, test_size=0.2, random_state=42)
     
-    # 2. Split the Temp in half (10% Valid, 10% Test)
     valid_df, test_df = train_test_split(temp_df, test_size=0.5, random_state=42)
 
     # --- SAVING TO TSV ---
     out_path = Path(output_dir)
     out_path.mkdir(parents=True, exist_ok=True)
     
-    # KGE libraries require no headers and tab separation
     train_df.to_csv(out_path / "train.tsv", sep='\t', index=False, header=False)
     valid_df.to_csv(out_path / "valid.tsv", sep='\t', index=False, header=False)
     test_df.to_csv(out_path / "test.tsv", sep='\t', index=False, header=False)
@@ -75,10 +69,9 @@ def prepare_kge_datasets(graph_path, output_dir):
 
 
 def run_kge_experiment(train_path, valid_path, test_path, model_name, epochs=100, embedding_dim=100):
-    print(f"\n🚀 Training {model_name}...")
+    print(f"\nTraining {model_name}...")
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
-    # Load Triples
     training_factory = TriplesFactory.from_path(train_path)
     validation_factory = TriplesFactory.from_path(
         valid_path, 
@@ -91,7 +84,6 @@ def run_kge_experiment(train_path, valid_path, test_path, model_name, epochs=100
         relation_to_id=training_factory.relation_to_id
     )
 
-    # Run the Pipeline
     result = pipeline(
         model=model_name,
         training=training_factory,
@@ -104,10 +96,8 @@ def run_kge_experiment(train_path, valid_path, test_path, model_name, epochs=100
         random_seed=42,
     )
     
-    # --- THE VERSION-PROOF EXTRACTION ---
     df = result.metric_results.to_df()
     
-    # Dynamically find the "Type" column so it never throws a KeyError
     type_column = None
     for col in ['Type', 'Value Type', 'RankType']:
         if col in df.columns:
@@ -127,10 +117,8 @@ def run_kge_experiment(train_path, valid_path, test_path, model_name, epochs=100
                 if type_mask.any():
                     return filtered_df[type_mask]['Value'].values[0]
         
-        # Fallback: just return the first matching value
         return filtered_df['Value'].values[0] if not filtered_df.empty else 0.0
 
-    # Extract all the required metrics for the lab securely
     metrics = {
         'MRR': safe_get_metric('both', 'mean_reciprocal_rank'),
         'Hits@1': safe_get_metric('both', 'hits_at_1'),
