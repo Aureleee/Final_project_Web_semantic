@@ -11,3 +11,4 @@ fastcoref
 scikit-learn
 pykeen
 torch
+hf_transfer

@@ -87,7 +87,7 @@ def load_existing_urls(output_file):
 
     return urls
 
-def extract_page_data(url, base_domain="https://wiki.leagueoflegends.com"):
+def extract_page_data(url, arcane_engine, base_domain="https://wiki.leagueoflegends.com"):
     """Extracts text AND relevant internal wiki links from a page."""
     html = trafilatura.fetch_url(url)
     if html is None:
@@ -97,12 +97,14 @@ def extract_page_data(url, base_domain="https://wiki.leagueoflegends.com"):
     content = soup.find("div", class_="mw-parser-output")
     
     sections = ["Plot", "Background", "Relations", "Personality", "Appearance", "Lore", "History", "Locations", "Government", "Properties"]
+    
     # Try to find 'Plot' first, if not, grab the 'Biography' or 'Summary' for character pages
     main_sections = []
     for section in sections:
         if content.find("h2", id=section) is not None:
             main_sections.append(content.find("h2", id=section))
-    if main_sections is None:
+            
+    if not main_sections: # Cleaner way to check if list is empty
         return None
 
     plot_paragraphs = []
@@ -117,27 +119,29 @@ def extract_page_data(url, base_domain="https://wiki.leagueoflegends.com"):
                 
                 for a in e.find_all("a", href=True):
                     href = a['href']
-                    # Filter: Only internal wiki links, ignore Meta pages (Category:, File:, Template:)
+                    # Filter: Only internal wiki links, ignore Meta pages
                     if (href.startswith("/wiki/") or href.startswith("/en-us/")) and ":" not in href.replace("Universe:", ""):
                         full_link = urllib.parse.urljoin(base_domain, href)
                         relevant_links.add(full_link)
 
+    # 1. Join all paragraphs together into one big string
     text = "\n".join(plot_paragraphs)
+    
     if len(text.split()) < 50: 
         return None
-    paragraphs = text.split('\n\n')
 
-    for paragraph in paragraphs:
-        full_text += paragraph + " "
-    doc = ArcaneNLP.process_text(full_text)
+    # 2. Pass the ENTIRE text to the potent engine at once (No loops needed!)
+    doc = arcane_engine.process_text(text)
 
-    # Extract everything from the SAME doc object
-    entities = extract_entities(doc)
-    relations = extract_relations(doc)
+    # 3. Extract entities and relations from the resolved doc
+    entities = extract_entities_from_doc(doc)
+    relations = extract_relations_from_doc(doc)
+    
+    # Return exactly as your loop expects: (Dictionary, Entities, Relations)
     return ({
         "url": url,
-        "text": text,
-        "word_count": len(text.split()),
+        "text": doc.text, # IMPORTANT: Save the resolved text, not the raw text!
+        "word_count": len(doc.text.split()),
         "links": list(relevant_links) 
     },
         entities, 
