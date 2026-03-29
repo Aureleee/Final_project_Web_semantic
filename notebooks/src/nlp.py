@@ -17,9 +17,8 @@ import spacy
 from bs4 import BeautifulSoup
 import csv
 import urllib.parse
-from rdflib import Graph, URIRef, Literal, Namespace
-from rdflib.namespace import RDF, RDFS
-from fastcoref import LingMessCoref
+from rdflib import Namespace
+from fastcoref import spacy_component
 
 urls_arcane = ["https://wiki.leagueoflegends.com/en-us/Universe:Arcane_(TV_Series)/Season_1/Episode_1",
                 "https://wiki.leagueoflegends.com/en-us/Universe:Arcane_(TV_Series)/Season_1/Episode_2",
@@ -52,15 +51,21 @@ class ArcaneNLP:
             self.nlp = spacy.load("en_core_web_trf")
 
         device = 'cuda' if use_gpu else 'cpu'
-        self.coref_model = LingMessCoref(device=device)
-
+        self.nlp.add_pipe(
+            "fastcoref",
+            config = {
+                    'model_architecture': 'LingMessCoref', 
+                    'model_path': 'biu-nlp/lingmess-coref', 
+                    'device': device,
+                    "max_dist": 50,   
+                    "max_doc_len": 30000 #trained on gpu so no problem here 
+            } 
+        )
     def process_text(self, text):
         """
         Resolves coreferences and then processes the text through spaCy.
         """
-        preds = self.coref_model.predict(texts=[text])
-        resolved_text = preds[0].get_resolved_text()
-        return self.nlp(resolved_text)
+        return self.nlp(text, component_cfg={"fastcoref": {'resolve_text': True}})
 
 # ================================
 # URL loading / page extraction
