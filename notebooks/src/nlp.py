@@ -39,7 +39,7 @@ urls_arcane = ["https://wiki.leagueoflegends.com/en-us/Universe:Arcane_(TV_Serie
 
 class ArcaneNLP:
     def __init__(self, use_gpu=True):
-        print("🔮 Initializing ArcaneNLP (Safe Merging Mode)...")
+        print("Initializing ArcaneNLP (Safe Merging Mode)...")
         # Load the base model
         try:
             self.nlp = spacy.load("en_core_web_trf")
@@ -71,24 +71,16 @@ class ArcaneNLP:
         
         for chunk in chunks:
             try:
-                # 1. Run Coreference on the small chunk
                 doc = self.nlp(chunk, component_cfg={"fastcoref": {'resolve_text': True}})
-                
-                # 2. Get the resolved text (pronouns replaced)
+
                 resolved_chunk_text = doc._.resolved_text if doc._.resolved_text else chunk
-                
-                # 3. Process the resolved text to get Entities/Relations for THIS chunk.
-                # We disable 'fastcoref' here because we already resolved it.
                 doc_chunk = self.nlp(resolved_chunk_text, disable=["fastcoref"])
                 processed_chunks.append(doc_chunk)
                 
             except Exception as e:
-                print(f"  ⚠️ Chunk processing failed: {e}")
-                # Fallback: create a simple doc if inference fails
+                print(f"Chunk processing failed: {e}")
                 processed_chunks.append(self.nlp.make_doc(chunk))
 
-        # 4. THE CRITICAL FIX: Merge the Docs without re-running inference
-        # This creates one large Doc containing all entities and heads from the chunks.
         if processed_chunks:
             full_doc = Doc.from_docs(processed_chunks)
             return full_doc
